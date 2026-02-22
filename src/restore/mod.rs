@@ -3,11 +3,23 @@ use flate2::read::GzDecoder;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use tempfile::TempDir;
 
 use crate::config::Config;
+use crate::validate::{ValidationIssue, Severity};
 
 /// Restore OpenClaw from a backup snapshot
 pub async fn restore(cfg: &Config, backup_id: Option<&str>) -> Result<()> {
+    restore_with_options(cfg, backup_id, false, false).await
+}
+
+/// Restore with validation and dry-run options
+pub async fn restore_with_options(
+    cfg: &Config,
+    backup_id: Option<&str>,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
     // Find the backup to restore
     let snapshots = crate::backup::list_snapshots(cfg)?;
     
@@ -25,19 +37,79 @@ pub async fn restore(cfg: &Config, backup_id: Option<&str>) -> Result<()> {
 
     println!("🛟 Restoring from backup: {} ({})", snapshot.id, snapshot.size_human);
 
-    // Step 1: Stop OpenClaw gateway
+    // Step 1: Validate backup contents (unless --force)
+    if !force {
+        println!("  Validating backup...");
+        let temp_dir = TempDir::new()?;
+        extract_backup_to(&snapshot.path, temp_dir.path(), cfg)?;
+        
+        // Validate config
+        let config_issues = crate::validate::validate_openclaw_config(
+            &temp_dir.path().join("config")
+        )?;
+        
+        // Validate workspace
+        let workspace_issues = crate::validate::validate_workspace(
+            &temp_dir.path().join("workspace")
+        )?;
+        
+        let all_issues: Vec<_> = config_issues.into_iter()
+            .chain(workspace_issues.into_iter())
+            .collect();
+        
+        let errors: Vec<_> = all_issues.iter()
+            .filter(|i| matches!(i.severity, Severity::Error))
+            .collect();
+        
+        if !all_issues.is_empty() {
+            println!("\n  Validation issues found:");
+            for issue in &all_issues {
+                let icon = match issue.severity {
+                    Severity::Error => "❌",
+                    Severity::Warning => "⚠️",
+                };
+                println!("    {} {}", icon, issue.message);
+            }
+            println!();
+        }
+        
+        if !errors.is_empty() {
+            if dry_run {
+                println!("  ❌ Restore would fail due to validation errors");
+                return Ok(());
+            }
+            anyhow::bail!(
+                "Backup validation failed with {} error(s). Use --force to override.",
+                errors.len()
+            );
+        }
+        
+        if !all_issues.is_empty() {
+            println!("  ⚠️  Found {} warning(s) but proceeding...\n", all_issues.len());
+        }
+    }
+
+    if dry_run {
+        println!("  ✓ Dry-run: Backup is valid and would restore successfully");
+        println!("\n  Would restore:");
+        println!("    - Workspace to: {}", cfg.openclaw.workspace.display());
+        println!("    - Config to:    {}", cfg.openclaw.config_path.display());
+        return Ok(());
+    }
+
+    // Step 2: Stop OpenClaw gateway
     println!("  Stopping OpenClaw gateway...");
     stop_openclaw()?;
 
-    // Step 2: Extract backup
+    // Step 3: Extract backup
     println!("  Extracting backup...");
     extract_backup(&snapshot.path, cfg)?;
 
-    // Step 3: Restart OpenClaw gateway
+    // Step 4: Restart OpenClaw gateway
     println!("  Restarting OpenClaw gateway...");
     start_openclaw()?;
 
-    // Step 4: Verify it's alive
+    // Step 5: Verify it's alive
     println!("  Verifying agent is responsive...");
     let alive = wait_for_agent(30).await;
 
@@ -45,6 +117,76 @@ pub async fn restore(cfg: &Config, backup_id: Option<&str>) -> Result<()> {
         println!("  ✓ Agent restored and online!");
     } else {
         println!("  ⚠ Agent started but not yet responding. Check manually.");
+    }
+
+    Ok(())
+}
+
+/// Extract backup and optionally analyze incident
+pub async fn restore_and_analyze(
+    cfg: &Config,
+    backup_id: Option<&str>,
+    incident: Option<&crate::health::IncidentLog>,
+) -> Result<()> {
+    // Perform restore
+    restore(cfg, backup_id).await?;
+    
+    // Generate incident analysis if we have incident info
+    if let Some(inc) = incident {
+        println!("\n  📊 Analyzing incident...");
+        match crate::analysis::analyze_incident(cfg).await {
+            Ok(analysis) => {
+                let backup_id_str = backup_id.unwrap_or("latest");
+                let report = crate::analysis::format_incident_report(
+                    &analysis,
+                    inc,
+                    backup_id_str,
+                );
+                
+                // Save report
+                let report_path = cfg.backup.path.join(
+                    format!("incident-report-{}.md", backup_id_str)
+                );
+                fs::write(&report_path, &report)?;
+                println!("  ✓ Incident report saved to: {}", report_path.display());
+                
+                // Return report for potential Telegram notification
+                return Ok(());
+            }
+            Err(e) => {
+                println!("  ⚠ Analysis failed: {}", e);
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+/// Extract backup to a specific directory (for validation)
+fn extract_backup_to(backup_path: &Path, dest_dir: &Path, cfg: &Config) -> Result<()> {
+    let tar_file = fs::File::open(backup_path)?;
+    let decoder = GzDecoder::new(tar_file);
+    let mut archive = tar::Archive::new(decoder);
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.to_path_buf();
+        let path_str = path.to_string_lossy();
+
+        let dest = if path_str.starts_with("workspace/")
+            || path_str.starts_with("config/")
+            || path_str.starts_with("sessions/")
+        {
+            dest_dir.join(&*path)
+        } else {
+            continue;
+        };
+
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        entry.unpack(&dest)?;
     }
 
     Ok(())

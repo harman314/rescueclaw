@@ -1,8 +1,10 @@
+mod analysis;
 mod backup;
 mod config;
 mod health;
 mod restore;
 mod telegram;
+mod validate;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -33,6 +35,12 @@ enum Commands {
     Restore {
         /// Backup ID to restore (latest if omitted)
         id: Option<String>,
+        /// Skip validation checks
+        #[arg(long)]
+        force: bool,
+        /// Show what would be restored without applying
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Show recent incident logs
     Logs {
@@ -77,8 +85,8 @@ async fn main() -> Result<()> {
                 );
             }
         }
-        Commands::Restore { id } => {
-            restore::restore(&cfg, id.as_deref()).await?;
+        Commands::Restore { id, force, dry_run } => {
+            restore::restore_with_options(&cfg, id.as_deref(), force, dry_run).await?;
         }
         Commands::Logs { n } => {
             let logs = health::recent_incidents(&cfg, n)?;

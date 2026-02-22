@@ -4,8 +4,25 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use crate::config::Config;
+
+/// Checkpoint request from OpenClaw skill
+#[derive(Debug, Deserialize)]
+struct CheckpointRequest {
+    action: String,
+    reason: String,
+    timestamp: String,
+    rollback_window_seconds: u64,
+}
+
+/// State for active checkpoint monitoring
+struct CheckpointState {
+    reason: String,
+    deadline: SystemTime,
+    backup_id: String,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HealthStatus {
@@ -113,9 +130,47 @@ pub async fn health_loop(cfg: &Config) -> Result<()> {
     let interval = parse_health_interval(&cfg.health.check_interval)?;
     let mut consecutive_failures: u32 = 0;
     let incidents_path = cfg.backup.path.join("incidents.jsonl");
+    let checkpoint_path = PathBuf::from("/var/rescueclaw/checkpoint-request.json");
+    let mut active_checkpoint: Option<CheckpointState> = None;
 
     loop {
         tokio::time::sleep(interval).await;
+
+        // Check for checkpoint requests
+        if let Some(checkpoint_req) = read_checkpoint_request(&checkpoint_path) {
+            if active_checkpoint.is_none() {
+                // New checkpoint requested - take immediate backup
+                tracing::info!("Checkpoint requested: {}", checkpoint_req.reason);
+                match crate::backup::take_snapshot(cfg) {
+                    Ok(snapshot) => {
+                        let deadline = SystemTime::now() + 
+                            std::time::Duration::from_secs(checkpoint_req.rollback_window_seconds);
+                        let backup_id = snapshot.id.clone();
+                        active_checkpoint = Some(CheckpointState {
+                            reason: checkpoint_req.reason,
+                            deadline,
+                            backup_id: backup_id.clone(),
+                        });
+                        tracing::info!("Checkpoint backup created: {}", backup_id);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to create checkpoint backup: {}", e);
+                    }
+                }
+            }
+        } else if active_checkpoint.is_some() {
+            // Checkpoint file removed - operation succeeded
+            tracing::info!("Checkpoint cleared - operation completed successfully");
+            active_checkpoint = None;
+        }
+
+        // Check if checkpoint deadline expired
+        if let Some(ref checkpoint) = active_checkpoint {
+            if SystemTime::now() > checkpoint.deadline {
+                tracing::info!("Checkpoint rollback window expired");
+                active_checkpoint = None;
+            }
+        }
 
         let alive = check_agent_alive(cfg).await;
 
@@ -146,6 +201,20 @@ pub async fn health_loop(cfg: &Config) -> Result<()> {
                     });
             }
 
+            // If there's an active checkpoint and agent is down, restore immediately
+            if let Some(ref checkpoint) = active_checkpoint {
+                if SystemTime::now() <= checkpoint.deadline {
+                    tracing::error!("Agent unresponsive within checkpoint window! Restoring immediately...");
+                    if let Err(e) = crate::restore::restore(cfg, Some(&checkpoint.backup_id)).await {
+                        tracing::error!("Checkpoint restore failed: {}", e);
+                    } else {
+                        consecutive_failures = 0;
+                        active_checkpoint = None;
+                    }
+                    continue;
+                }
+            }
+
             // Auto-restore if enabled and threshold reached
             if cfg.health.auto_restore && consecutive_failures >= cfg.health.unhealthy_threshold {
                 tracing::error!("Threshold reached! Initiating auto-restore...");
@@ -157,6 +226,16 @@ pub async fn health_loop(cfg: &Config) -> Result<()> {
             }
         }
     }
+}
+
+/// Read and parse checkpoint request file
+fn read_checkpoint_request(path: &PathBuf) -> Option<CheckpointRequest> {
+    if !path.exists() {
+        return None;
+    }
+    
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 /// Read recent incident logs
