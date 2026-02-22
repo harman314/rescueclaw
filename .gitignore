@@ -1,0 +1,25 @@
+# Build
+/target/
+/dist/
+
+# Config with secrets
+rescue-bot.json
+
+# Backups (don't commit actual backups)
+/backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+
+# Added by cargo
+
+/target

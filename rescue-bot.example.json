@@ -1,0 +1,22 @@
+{
+  "backup": {
+    "interval": "6h",
+    "maxSnapshots": 10,
+    "path": "/var/rescue-bot/backups",
+    "includeSessions": false
+  },
+  "health": {
+    "checkInterval": "5m",
+    "unhealthyThreshold": 3,
+    "autoRestore": false,
+    "autoRestoreCooldown": "1h"
+  },
+  "telegram": {
+    "token": "YOUR_BOT_TOKEN_FROM_BOTFATHER",
+    "allowedUsers": []
+  },
+  "openclaw": {
+    "workspace": "",
+    "configPath": "~/.openclaw"
+  }
+}
