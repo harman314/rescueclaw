@@ -140,26 +140,253 @@ impl Default for Config {
 
 /// Interactive setup wizard
 pub async fn setup_wizard() -> Result<()> {
+    use std::io::{self, Write};
+    
     println!("🛟 RescueClaw Setup");
     println!("━━━━━━━━━━━━━━━━━━\n");
     
     // Step 1: Detect OpenClaw
-    println!("Step 1/5: Detect OpenClaw");
+    println!("Step 1/6: Detect OpenClaw");
     let workspace = detect_openclaw_workspace()?;
-    println!("  ✓ Found OpenClaw workspace at {}", workspace.display());
+    println!("  ✓ Workspace: {}", workspace.display());
     
-    // TODO: Full interactive wizard implementation
-    // - Detect OpenClaw config path
-    // - Check if gateway is running
-    // - Prompt for Telegram bot token
-    // - Configure backup settings
-    // - Install systemd service
-    // - Take first backup
+    let config_path = detect_openclaw_config()?;
+    println!("  ✓ Config:    {}", config_path.display());
     
-    println!("\n  Setup wizard is under construction.");
-    println!("  For now, copy rescueclaw.example.json to rescueclaw.json and edit manually.\n");
+    // Check if gateway is running
+    let gateway_running = check_gateway_running().await;
+    if gateway_running {
+        println!("  ✓ Gateway:   Running");
+    } else {
+        println!("  ⚠ Gateway:   Not responding on :7744");
+    }
+    
+    // Validate OpenClaw config
+    let oc_config = OpenClawConfig {
+        workspace: workspace.clone(),
+        config_path: config_path.clone(),
+    };
+    let temp_cfg = Config {
+        openclaw: oc_config.clone(),
+        ..Default::default()
+    };
+    
+    match temp_cfg.read_openclaw_providers() {
+        Ok(_) => println!("  ✓ Config:    Valid"),
+        Err(e) => println!("  ⚠ Config:    {}", e),
+    }
+    
+    println!();
+    
+    // Step 2: Telegram Bot
+    println!("Step 2/6: Telegram Bot");
+    println!("  1. Open @BotFather on Telegram");
+    println!("  2. Send /newbot and name it (e.g., 'MyRescueClaw')");
+    println!("  3. Copy the bot token\n");
+    
+    let token = loop {
+        let input = prompt("Bot token: ", "")?;
+        if input.is_empty() {
+            continue;
+        }
+        
+        // Validate format (digits:alphanumeric)
+        if !input.contains(':') || input.len() < 20 {
+            println!("  ❌ Invalid format. Expected format: 123456:ABC-DEF...");
+            continue;
+        }
+        
+        // Test token
+        print!("  Testing token...");
+        io::stdout().flush()?;
+        match validate_telegram_token(&input).await {
+            Ok(bot_name) => {
+                println!(" ✓ Connected to @{}", bot_name);
+                break input;
+            }
+            Err(e) => {
+                println!(" ❌ Failed: {}", e);
+                continue;
+            }
+        }
+    };
+    
+    println!("\n  Now send /start to your bot in Telegram.");
+    println!("  Then get your user ID from @userinfobot (send any message to it).\n");
+    
+    let user_id: i64 = loop {
+        let input = prompt("Your Telegram user ID: ", "")?;
+        match input.parse() {
+            Ok(id) => break id,
+            Err(_) => {
+                println!("  ❌ Must be a number");
+                continue;
+            }
+        }
+    };
+    
+    println!();
+    
+    // Step 3: Backup Settings
+    println!("Step 3/6: Backup Settings");
+    let backup_interval = prompt("Backup interval [6h]: ", "6h")?;
+    let max_snapshots: usize = prompt("Max snapshots to keep [10]: ", "10")?.parse()
+        .unwrap_or(10);
+    let backup_path = PathBuf::from(prompt("Backup path [/var/rescueclaw/backups]: ", 
+        "/var/rescueclaw/backups")?);
+    let include_sessions = prompt_yn("Include session files? [n]: ", false)?;
+    
+    // Validate backup path
+    if let Err(e) = std::fs::create_dir_all(&backup_path) {
+        println!("  ⚠ Warning: Could not create backup dir: {}", e);
+    } else {
+        println!("  ✓ Backup directory ready");
+    }
+    
+    println!();
+    
+    // Step 4: Health Check Settings
+    println!("Step 4/6: Health Check Settings");
+    let check_interval = prompt("Health check interval [5m]: ", "5m")?;
+    let unhealthy_threshold: u32 = prompt("Failures before auto-restore [3]: ", "3")?.parse()
+        .unwrap_or(3);
+    let auto_restore = prompt_yn("Enable auto-restore? [y]: ", true)?;
+    
+    println!();
+    
+    // Step 5: Write Config
+    println!("Step 5/6: Write Config");
+    let config = Config {
+        backup: BackupConfig {
+            interval: backup_interval,
+            max_snapshots,
+            path: backup_path,
+            include_sessions,
+        },
+        health: HealthConfig {
+            check_interval,
+            unhealthy_threshold,
+            auto_restore,
+            auto_restore_cooldown: Some("1h".to_string()),
+        },
+        telegram: TelegramConfig {
+            token,
+            allowed_users: vec![user_id],
+        },
+        openclaw: oc_config,
+    };
+    
+    let config_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?
+        .join(".config/rescueclaw");
+    std::fs::create_dir_all(&config_dir)?;
+    
+    let config_file = config_dir.join("rescueclaw.json");
+    let json = serde_json::to_string_pretty(&config)?;
+    std::fs::write(&config_file, json)?;
+    
+    println!("  ✓ Config written to {}", config_file.display());
+    println!();
+    
+    // Step 6: First Backup & Service Install
+    println!("Step 6/6: First Backup & Service Install");
+    
+    print!("  Taking first backup...");
+    io::stdout().flush()?;
+    match crate::backup::take_snapshot(&config) {
+        Ok(snap) => println!(" ✓ {}", snap.id),
+        Err(e) => println!(" ❌ {}", e),
+    }
+    
+    println!();
+    if prompt_yn("Install systemd service? [y]: ", true)? {
+        install_systemd_service(&config)?;
+    } else {
+        println!("  Skipped. Run 'sudo rescueclaw install' later to install the service.");
+    }
+    
+    println!();
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("✅ Setup Complete!");
+    println!();
+    println!("Your AI agent now has a safety net.");
+    println!("RescueClaw will:");
+    println!("  • Take backups every {}", config.backup.interval);
+    println!("  • Check health every {}", config.health.check_interval);
+    if config.health.auto_restore {
+        println!("  • Auto-restore after {} consecutive failures", config.health.unhealthy_threshold);
+    }
+    println!();
+    println!("Start the daemon:  sudo systemctl start rescueclaw");
+    println!("View status:       rescueclaw status");
+    println!("List backups:      rescueclaw list");
+    println!();
     
     Ok(())
+}
+
+/// Helper: prompt for input with default
+fn prompt(question: &str, default: &str) -> Result<String> {
+    use std::io::{self, Write};
+    print!("  {}", question);
+    io::stdout().flush()?;
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim();
+    
+    if input.is_empty() {
+        Ok(default.to_string())
+    } else {
+        Ok(input.to_string())
+    }
+}
+
+/// Helper: prompt for yes/no
+fn prompt_yn(question: &str, default: bool) -> Result<bool> {
+    let input = prompt(question, if default { "y" } else { "n" })?;
+    Ok(matches!(input.to_lowercase().as_str(), "y" | "yes"))
+}
+
+/// Validate Telegram token by calling getMe API
+async fn validate_telegram_token(token: &str) -> Result<String> {
+    let url = format!("https://api.telegram.org/bot{}/getMe", token);
+    let resp = reqwest::get(&url).await?;
+    
+    if !resp.status().is_success() {
+        anyhow::bail!("Invalid token or network error");
+    }
+    
+    let json: serde_json::Value = resp.json().await?;
+    let bot_name = json["result"]["username"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
+    
+    Ok(bot_name)
+}
+
+/// Check if OpenClaw gateway is running
+async fn check_gateway_running() -> bool {
+    reqwest::get("http://127.0.0.1:7744/api/status")
+        .await
+        .is_ok()
+}
+
+/// Detect OpenClaw config directory
+fn detect_openclaw_config() -> Result<PathBuf> {
+    let candidates = vec![
+        dirs::home_dir().map(|h| h.join(".openclaw")),
+        dirs::home_dir().map(|h| h.join(".clawdbot")),
+    ];
+    
+    for candidate in candidates.into_iter().flatten() {
+        if candidate.join("openclaw.json").exists() || candidate.join("clawdbot.json").exists() {
+            return Ok(candidate);
+        }
+    }
+    
+    anyhow::bail!("Could not find OpenClaw config directory (~/.openclaw or ~/.clawdbot)")
 }
 
 /// Try to find the OpenClaw workspace
@@ -180,11 +407,120 @@ fn detect_openclaw_workspace() -> Result<PathBuf> {
     anyhow::bail!("Could not auto-detect OpenClaw workspace. Please specify with --workspace")
 }
 
+/// Generate systemd service file content
+fn generate_service_file(cfg: &Config) -> String {
+    let binary_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| "/usr/local/bin/rescueclaw".to_string());
+    
+    format!(r#"[Unit]
+Description=RescueClaw - AI Agent Watchdog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={} start
+Restart=on-failure
+RestartSec=10
+Environment=RUST_LOG=info
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={} {} {}
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
+"#,
+        binary_path,
+        cfg.backup.path.display(),
+        cfg.openclaw.workspace.display(),
+        cfg.openclaw.config_path.display()
+    )
+}
+
+/// Install systemd service
+pub fn install_systemd_service(cfg: &Config) -> Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    
+    println!("  Installing systemd service...");
+    
+    let service_content = generate_service_file(cfg);
+    
+    // Write service file using sudo tee
+    let mut child = Command::new("sudo")
+        .args(["tee", "/etc/systemd/system/rescueclaw.service"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()?;
+    
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(service_content.as_bytes())?;
+    }
+    
+    let status = child.wait()?;
+    if !status.success() {
+        anyhow::bail!("Failed to write service file");
+    }
+    
+    // Reload systemd
+    Command::new("sudo")
+        .args(["systemctl", "daemon-reload"])
+        .status()?;
+    
+    // Enable service
+    Command::new("sudo")
+        .args(["systemctl", "enable", "rescueclaw"])
+        .status()?;
+    
+    // Start service
+    let start_status = Command::new("sudo")
+        .args(["systemctl", "start", "rescueclaw"])
+        .status()?;
+    
+    if start_status.success() {
+        println!("  ✓ Service installed and started");
+        println!("  View logs: sudo journalctl -u rescueclaw -f");
+    } else {
+        println!("  ⚠ Service installed but failed to start");
+        println!("  Check: sudo systemctl status rescueclaw");
+    }
+    
+    Ok(())
+}
+
 /// Uninstall the watchdog service
 pub fn uninstall() -> Result<()> {
+    use std::process::Command;
+    
     println!("🛟 Uninstalling RescueClaw...");
-    // TODO: Stop and disable systemd service, remove service file
+    
+    // Stop service
+    let _ = Command::new("sudo")
+        .args(["systemctl", "stop", "rescueclaw"])
+        .status();
+    
+    // Disable service
+    let _ = Command::new("sudo")
+        .args(["systemctl", "disable", "rescueclaw"])
+        .status();
+    
+    // Remove service file
+    let _ = Command::new("sudo")
+        .args(["rm", "/etc/systemd/system/rescueclaw.service"])
+        .status();
+    
+    // Reload systemd
+    let _ = Command::new("sudo")
+        .args(["systemctl", "daemon-reload"])
+        .status();
+    
+    println!("  ✓ Service uninstalled");
     println!("  Backups preserved at /var/rescueclaw/backups/");
-    println!("  ✓ Uninstalled");
+    println!("  Config preserved at ~/.config/rescueclaw/");
     Ok(())
 }

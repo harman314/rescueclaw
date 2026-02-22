@@ -8,15 +8,15 @@
   "health": {
     "checkInterval": "5m",
     "unhealthyThreshold": 3,
-    "autoRestore": false,
+    "autoRestore": true,
     "autoRestoreCooldown": "1h"
   },
   "telegram": {
-    "token": "YOUR_BOT_TOKEN_FROM_BOTFATHER",
-    "allowedUsers": []
+    "token": "YOUR_BOT_TOKEN",
+    "allowedUsers": [123456789]
   },
   "openclaw": {
-    "workspace": "",
-    "configPath": "~/.openclaw"
+    "workspace": "/home/opc/clawd",
+    "configPath": "/home/opc/.openclaw"
   }
 }
