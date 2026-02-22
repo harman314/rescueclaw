@@ -97,26 +97,22 @@ pub async fn restore_with_options(
         return Ok(());
     }
 
-    // Step 2: Stop OpenClaw gateway
-    println!("  Stopping OpenClaw gateway...");
-    stop_openclaw()?;
-
-    // Step 3: Extract backup
+    // Step 2: Extract backup (files only — does NOT restart any gateway)
     println!("  Extracting backup...");
     extract_backup(&snapshot.path, cfg)?;
-
-    // Step 4: Restart OpenClaw gateway
-    println!("  Restarting OpenClaw gateway...");
-    start_openclaw()?;
-
-    // Step 5: Verify it's alive
-    println!("  Verifying agent is responsive...");
-    let alive = wait_for_agent(30).await;
+    println!("  ✓ Files restored to workspace and config directories.");
+    println!();
+    println!("  ⚠ Gateway was NOT restarted automatically (safety measure).");
+    println!("    To restart the correct gateway, run:");
+    println!("      openclaw gateway restart");
+    println!();
+    println!("  Verifying if gateway is responding...");
+    let alive = wait_for_agent(5).await;
 
     if alive {
-        println!("  ✓ Agent restored and online!");
+        println!("  ✓ Gateway is online (files restored, gateway still running).");
     } else {
-        println!("  ⚠ Agent started but not yet responding. Check manually.");
+        println!("  ℹ Gateway not responding. Restart it manually when ready.");
     }
 
     Ok(())
