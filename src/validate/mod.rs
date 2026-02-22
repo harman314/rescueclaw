@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::path::Path;
 use serde_json::Value;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Severity {
@@ -50,7 +50,10 @@ pub fn validate_openclaw_config(config_path: &Path) -> Result<Vec<ValidationIssu
     let content = match std::fs::read_to_string(&config_file) {
         Ok(c) => c,
         Err(e) => {
-            issues.push(ValidationIssue::error(format!("Failed to read config: {}", e)));
+            issues.push(ValidationIssue::error(format!(
+                "Failed to read config: {}",
+                e
+            )));
             return Ok(issues);
         }
     };
@@ -65,7 +68,7 @@ pub fn validate_openclaw_config(config_path: &Path) -> Result<Vec<ValidationIssu
 
     // Check for required fields
     if let Some(default_model) = config.get("defaultModel") {
-        if default_model.as_str().map_or(true, |s| s.is_empty()) {
+        if default_model.as_str().is_none_or(|s| s.is_empty()) {
             issues.push(ValidationIssue::error("defaultModel is empty"));
         }
     } else {
@@ -144,7 +147,9 @@ pub fn validate_workspace(workspace_path: &Path) -> Result<Vec<ValidationIssue>>
 
     // Check for critical files
     if !workspace_path.join("SOUL.md").exists() {
-        issues.push(ValidationIssue::error("Missing SOUL.md - agent identity file"));
+        issues.push(ValidationIssue::error(
+            "Missing SOUL.md - agent identity file",
+        ));
     }
 
     if !workspace_path.join("AGENTS.md").exists() {
@@ -155,7 +160,9 @@ pub fn validate_workspace(workspace_path: &Path) -> Result<Vec<ValidationIssue>>
     if !workspace_path.join("memory").exists() {
         issues.push(ValidationIssue::warning("Missing memory/ directory"));
     } else if !workspace_path.join("memory").is_dir() {
-        issues.push(ValidationIssue::error("memory exists but is not a directory"));
+        issues.push(ValidationIssue::error(
+            "memory exists but is not a directory",
+        ));
     }
 
     // Warn if workspace seems empty

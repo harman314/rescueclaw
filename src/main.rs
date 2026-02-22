@@ -8,7 +8,6 @@ mod validate;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing_subscriber;
 
 #[derive(Parser)]
 #[command(name = "rescueclaw")]
@@ -79,8 +78,11 @@ async fn main() -> Result<()> {
         Commands::List => {
             let snapshots = backup::list_snapshots(&cfg)?;
             for s in snapshots {
-                println!("  {} — {} ({}) {}", 
-                    s.id, s.timestamp, s.size_human, 
+                println!(
+                    "  {} — {} ({}) {}",
+                    s.id,
+                    s.timestamp,
+                    s.size_human,
                     if s.verified { "✓" } else { "✗" }
                 );
             }

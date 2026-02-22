@@ -1,6 +1,5 @@
 use anyhow::Result;
 use teloxide::prelude::*;
-use teloxide::types::ChatId;
 
 use crate::config::Config;
 
@@ -37,7 +36,7 @@ pub async fn listen(cfg: &Config) -> Result<()> {
 
 /// Route Telegram commands to handlers
 async fn handle_command(text: &str, cfg: &Config) -> String {
-    let parts: Vec<&str> = text.trim().split_whitespace().collect();
+    let parts: Vec<&str> = text.split_whitespace().collect();
     let cmd = parts.first().map(|s| s.to_lowercase()).unwrap_or_default();
 
     match cmd.as_str() {
@@ -87,10 +86,16 @@ fn cmd_list(cfg: &Config) -> String {
             for (i, s) in snapshots.iter().enumerate().take(10) {
                 out.push_str(&format!(
                     "{}. `{}` — {} ({})\n",
-                    i + 1, s.id, s.timestamp, s.size_human
+                    i + 1,
+                    s.id,
+                    s.timestamp,
+                    s.size_human
                 ));
             }
-            out.push_str(&format!("\nRestore with: /rescue <id>"));
+            out.push_str(
+                "
+Restore with: /rescue <id>",
+            );
             out
         }
         Err(e) => format!("❌ Error listing backups: {}", e),
@@ -99,19 +104,27 @@ fn cmd_list(cfg: &Config) -> String {
 
 fn cmd_backup(cfg: &Config) -> String {
     match crate::backup::take_snapshot(cfg) {
-        Ok(snap) => format!("✅ Backup saved!\n\nID: `{}`\nSize: {}\nFiles: {}", 
-            snap.id, snap.size_human, snap.file_count),
+        Ok(snap) => format!(
+            "✅ Backup saved!\n\nID: `{}`\nSize: {}\nFiles: {}",
+            snap.id, snap.size_human, snap.file_count
+        ),
         Err(e) => format!("❌ Backup failed: {}", e),
     }
 }
 
 async fn cmd_rescue(cfg: &Config, id: Option<&str>) -> String {
     let label = id.unwrap_or("latest");
-    let msg = format!("🛟 Restoring from {} backup...\n\nThis may take 30 seconds.", label);
-    
+    let _msg = format!(
+        "🛟 Restoring from {} backup...\n\nThis may take 30 seconds.",
+        label
+    );
+
     match crate::restore::restore(cfg, id).await {
         Ok(_) => format!("✅ Agent restored and online!\n\nRestored from: {}", label),
-        Err(e) => format!("❌ Restore failed: {}\n\nYou may need to SSH in and fix manually.", e),
+        Err(e) => format!(
+            "❌ Restore failed: {}\n\nYou may need to SSH in and fix manually.",
+            e
+        ),
     }
 }
 
@@ -121,7 +134,10 @@ fn cmd_logs(cfg: &Config) -> String {
         Ok(logs) => {
             let mut out = "📋 Recent incidents:\n\n".to_string();
             for log in logs {
-                out.push_str(&format!("• {} — {} ({})\n", log.timestamp, log.cause, log.recovery));
+                out.push_str(&format!(
+                    "• {} — {} ({})\n",
+                    log.timestamp, log.cause, log.recovery
+                ));
             }
             out
         }

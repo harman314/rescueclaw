@@ -3,7 +3,7 @@ use chrono::Utc;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::config::Config;
 
@@ -36,8 +36,8 @@ const CORE_FILES: &[&str] = &[
 /// OpenClaw config files to back up (relative to config path)
 const CONFIG_FILES: &[&str] = &[
     "openclaw.json",
-    "clawdbot.json",   // legacy
-    "agents",           // agent configs
+    "clawdbot.json", // legacy
+    "agents",        // agent configs
 ];
 
 /// Take a backup snapshot of the OpenClaw workspace + config
@@ -138,7 +138,7 @@ pub fn list_snapshots(cfg: &Config) -> Result<Vec<Snapshot>> {
 
     let mut entries: Vec<_> = fs::read_dir(&cfg.backup.path)?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "gz"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "gz"))
         .collect();
 
     entries.sort_by_key(|e| e.file_name());

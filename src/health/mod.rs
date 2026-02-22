@@ -10,6 +10,7 @@ use crate::config::Config;
 
 /// Checkpoint request from OpenClaw skill
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CheckpointRequest {
     action: String,
     reason: String,
@@ -18,6 +19,7 @@ struct CheckpointRequest {
 }
 
 /// State for active checkpoint monitoring
+#[allow(dead_code)]
 struct CheckpointState {
     reason: String,
     deadline: SystemTime,
@@ -46,19 +48,46 @@ pub struct IncidentLog {
 impl fmt::Display for HealthStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "🛟 RescueClaw Status\n")?;
-        writeln!(f, "Agent:       {} {}",
+        writeln!(
+            f,
+            "Agent:       {} {}",
             if self.agent_online { "✅" } else { "❌" },
-            if self.agent_online { 
-                format!("Online{}", self.agent_uptime.as_deref().map_or(String::new(), |u| format!(" (uptime: {})", u)))
-            } else { 
-                "OFFLINE".to_string() 
+            if self.agent_online {
+                format!(
+                    "Online{}",
+                    self.agent_uptime
+                        .as_deref()
+                        .map_or(String::new(), |u| format!(" (uptime: {})", u))
+                )
+            } else {
+                "OFFLINE".to_string()
             }
         )?;
-        writeln!(f, "Watchdog:    ✅ Running (PID {}, {:.1}MB RAM)", self.watchdog_pid, self.watchdog_memory_mb)?;
-        writeln!(f, "Last backup: {}", self.last_backup.as_deref().unwrap_or("never"))?;
+        writeln!(
+            f,
+            "Watchdog:    ✅ Running (PID {}, {:.1}MB RAM)",
+            self.watchdog_pid, self.watchdog_memory_mb
+        )?;
+        writeln!(
+            f,
+            "Last backup: {}",
+            self.last_backup.as_deref().unwrap_or("never")
+        )?;
         writeln!(f, "Backups:     {} snapshots stored", self.backup_count)?;
-        writeln!(f, "Health:      {} consecutive check failures", self.consecutive_failures)?;
-        writeln!(f, "Skill:       {}", if self.skill_installed { "✅ Installed" } else { "⚠️  Not installed" })?;
+        writeln!(
+            f,
+            "Health:      {} consecutive check failures",
+            self.consecutive_failures
+        )?;
+        writeln!(
+            f,
+            "Skill:       {}",
+            if self.skill_installed {
+                "✅ Installed"
+            } else {
+                "⚠️  Not installed"
+            }
+        )?;
         Ok(())
     }
 }
@@ -72,7 +101,9 @@ pub async fn check_status(cfg: &Config) -> Result<HealthStatus> {
         .map(|s| s.timestamp.clone());
 
     // Check if rescueclaw skill is installed in OpenClaw
-    let skill_installed = cfg.openclaw.workspace
+    let skill_installed = cfg
+        .openclaw
+        .workspace
         .join("skills/rescueclaw-skill")
         .exists()
         || check_skill_via_clawhub(cfg);
@@ -89,12 +120,12 @@ pub async fn check_status(cfg: &Config) -> Result<HealthStatus> {
     })
 }
 
-/// Check if OpenClaw gateway is responding
+/// Check if OpenClaw gateway is responding on the configured port
 async fn check_agent_alive(cfg: &Config) -> bool {
-    // Try to hit the OpenClaw gateway status endpoint
+    let port = crate::restore::read_gateway_port(cfg);
     let client = reqwest::Client::new();
     let result = client
-        .get("http://127.0.0.1:7744/api/status")
+        .get(format!("http://127.0.0.1:{}/api/status", port))
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await;
@@ -143,8 +174,10 @@ pub async fn health_loop(cfg: &Config) -> Result<()> {
                 tracing::info!("Checkpoint requested: {}", checkpoint_req.reason);
                 match crate::backup::take_snapshot(cfg) {
                     Ok(snapshot) => {
-                        let deadline = SystemTime::now() + 
-                            std::time::Duration::from_secs(checkpoint_req.rollback_window_seconds);
+                        let deadline = SystemTime::now()
+                            + std::time::Duration::from_secs(
+                                checkpoint_req.rollback_window_seconds,
+                            );
                         let backup_id = snapshot.id.clone();
                         active_checkpoint = Some(CheckpointState {
                             reason: checkpoint_req.reason,
@@ -176,13 +209,19 @@ pub async fn health_loop(cfg: &Config) -> Result<()> {
 
         if alive {
             if consecutive_failures > 0 {
-                tracing::info!("Agent recovered after {} failed checks", consecutive_failures);
+                tracing::info!(
+                    "Agent recovered after {} failed checks",
+                    consecutive_failures
+                );
             }
             consecutive_failures = 0;
         } else {
             consecutive_failures += 1;
-            tracing::warn!("Agent unresponsive (check #{}/{})", 
-                consecutive_failures, cfg.health.unhealthy_threshold);
+            tracing::warn!(
+                "Agent unresponsive (check #{}/{})",
+                consecutive_failures,
+                cfg.health.unhealthy_threshold
+            );
 
             // Log the incident
             let incident = IncidentLog {
@@ -204,8 +243,11 @@ pub async fn health_loop(cfg: &Config) -> Result<()> {
             // If there's an active checkpoint and agent is down, restore immediately
             if let Some(ref checkpoint) = active_checkpoint {
                 if SystemTime::now() <= checkpoint.deadline {
-                    tracing::error!("Agent unresponsive within checkpoint window! Restoring immediately...");
-                    if let Err(e) = crate::restore::restore(cfg, Some(&checkpoint.backup_id)).await {
+                    tracing::error!(
+                        "Agent unresponsive within checkpoint window! Restoring immediately..."
+                    );
+                    if let Err(e) = crate::restore::restore(cfg, Some(&checkpoint.backup_id)).await
+                    {
                         tracing::error!("Checkpoint restore failed: {}", e);
                     } else {
                         consecutive_failures = 0;
@@ -233,7 +275,7 @@ fn read_checkpoint_request(path: &PathBuf) -> Option<CheckpointRequest> {
     if !path.exists() {
         return None;
     }
-    
+
     let content = fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()
 }
@@ -273,18 +315,9 @@ mod tests {
 
     #[test]
     fn test_parse_health_interval_valid() {
-        assert_eq!(
-            parse_health_interval("5m").unwrap().as_secs(),
-            300
-        );
-        assert_eq!(
-            parse_health_interval("30s").unwrap().as_secs(),
-            30
-        );
-        assert_eq!(
-            parse_health_interval("2h").unwrap().as_secs(),
-            7200
-        );
+        assert_eq!(parse_health_interval("5m").unwrap().as_secs(), 300);
+        assert_eq!(parse_health_interval("30s").unwrap().as_secs(), 30);
+        assert_eq!(parse_health_interval("2h").unwrap().as_secs(), 7200);
     }
 
     #[test]
@@ -301,10 +334,10 @@ mod tests {
             cause: "Test failure".to_string(),
             recovery: "pending".to_string(),
         };
-        
+
         let json = serde_json::to_string(&incident).unwrap();
         let parsed: IncidentLog = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.timestamp, incident.timestamp);
         assert_eq!(parsed.cause, incident.cause);
         assert_eq!(parsed.recovery, incident.recovery);
@@ -322,7 +355,7 @@ mod tests {
             consecutive_failures: 0,
             skill_installed: true,
         };
-        
+
         let display = format!("{}", status);
         assert!(display.contains("Online"));
         assert!(display.contains("12345"));

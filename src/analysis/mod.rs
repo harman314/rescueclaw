@@ -1,34 +1,31 @@
-use anyhow::Result;
+#![allow(dead_code)]
 use crate::config::Config;
 use crate::health::IncidentLog;
+use anyhow::Result;
 use std::path::Path;
 
 /// Analyze an incident using OpenClaw's LLM
 pub async fn analyze_incident(cfg: &Config) -> Result<String> {
     // Read OpenClaw provider config
     let provider_cfg = cfg.read_openclaw_providers()?;
-    
+
     // Extract API configuration
     let (api_key, base_url, model) = extract_api_config(&provider_cfg)?;
-    
+
     // Gather evidence
     let evidence = gather_evidence(cfg).await?;
-    
+
     // Build prompt
     let prompt = build_analysis_prompt(&evidence);
-    
+
     // Call LLM
     let analysis = call_llm(&api_key, &base_url, &model, &prompt).await?;
-    
+
     Ok(analysis)
 }
 
 /// Format a complete incident report
-pub fn format_incident_report(
-    analysis: &str,
-    incident: &IncidentLog,
-    backup_id: &str,
-) -> String {
+pub fn format_incident_report(analysis: &str, incident: &IncidentLog, backup_id: &str) -> String {
     format!(
         r#"# 🚨 Incident Report
 
@@ -84,7 +81,7 @@ async fn gather_evidence(cfg: &Config) -> Result<Evidence> {
     } else {
         "Gateway log not found".to_string()
     };
-    
+
     // Read recent incidents
     let recent_incidents = match crate::health::recent_incidents(cfg, 5) {
         Ok(incidents) => incidents
@@ -94,17 +91,16 @@ async fn gather_evidence(cfg: &Config) -> Result<Evidence> {
             .join("\n"),
         Err(_) => "No incident history".to_string(),
     };
-    
+
     // Try to diff config (compare with latest backup)
-    let config_diff = extract_config_diff(cfg).await.unwrap_or_else(|_| {
-        "Could not extract config diff".to_string()
-    });
-    
+    let config_diff = extract_config_diff(cfg)
+        .await
+        .unwrap_or_else(|_| "Could not extract config diff".to_string());
+
     // Check for recent workspace changes
-    let workspace_changes = check_recent_workspace_changes(cfg).unwrap_or_else(|_| {
-        "Could not determine recent changes".to_string()
-    });
-    
+    let workspace_changes = check_recent_workspace_changes(cfg)
+        .unwrap_or_else(|_| "Could not determine recent changes".to_string());
+
     Ok(Evidence {
         gateway_log_tail,
         config_diff,
@@ -155,10 +151,14 @@ Provide your analysis in clear sections: Root Cause, What Changed, and Recommend
 }
 
 /// Extract API configuration from OpenClaw provider config
-fn extract_api_config(provider_cfg: &crate::config::OpenClawProviderConfig) -> Result<(String, String, String)> {
-    let providers = provider_cfg.providers.as_ref()
+fn extract_api_config(
+    provider_cfg: &crate::config::OpenClawProviderConfig,
+) -> Result<(String, String, String)> {
+    let providers = provider_cfg
+        .providers
+        .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No providers in OpenClaw config"))?;
-    
+
     // Try to find OpenRouter first (cheap, works well)
     if let Some(openrouter) = providers.get("openrouter") {
         if let Some(api_key) = openrouter.get("apiKey").and_then(|v| v.as_str()) {
@@ -169,11 +169,13 @@ fn extract_api_config(provider_cfg: &crate::config::OpenClawProviderConfig) -> R
             ));
         }
     }
-    
+
     // Try Anthropic
     if let Some(anthropic) = providers.get("anthropic") {
         if let Some(api_key) = anthropic.get("apiKey").and_then(|v| v.as_str()) {
-            let model = provider_cfg.default_model.as_deref()
+            let model = provider_cfg
+                .default_model
+                .as_deref()
                 .unwrap_or("claude-3-5-haiku-20241022");
             return Ok((
                 api_key.to_string(),
@@ -182,34 +184,33 @@ fn extract_api_config(provider_cfg: &crate::config::OpenClawProviderConfig) -> R
             ));
         }
     }
-    
+
     // Fallback: use first available provider
     if let Some(providers_obj) = providers.as_object() {
         for (name, provider) in providers_obj {
             if let Some(api_key) = provider.get("apiKey").and_then(|v| v.as_str()) {
-                let base_url = provider.get("baseUrl")
+                let base_url = provider
+                    .get("baseUrl")
                     .and_then(|v| v.as_str())
                     .unwrap_or("https://api.openai.com/v1");
-                let model = provider_cfg.default_model.as_deref()
+                let model = provider_cfg
+                    .default_model
+                    .as_deref()
                     .unwrap_or("gpt-4o-mini");
-                
+
                 tracing::info!("Using provider '{}' for analysis", name);
-                return Ok((
-                    api_key.to_string(),
-                    base_url.to_string(),
-                    model.to_string(),
-                ));
+                return Ok((api_key.to_string(), base_url.to_string(), model.to_string()));
             }
         }
     }
-    
+
     anyhow::bail!("No valid API provider found in OpenClaw config")
 }
 
 /// Call LLM API
 async fn call_llm(api_key: &str, base_url: &str, model: &str, prompt: &str) -> Result<String> {
     let client = reqwest::Client::new();
-    
+
     // Build request - try OpenAI-compatible format first
     let body = serde_json::json!({
         "model": model,
@@ -222,9 +223,9 @@ async fn call_llm(api_key: &str, base_url: &str, model: &str, prompt: &str) -> R
         "temperature": 0.7,
         "max_tokens": 1000
     });
-    
+
     let url = format!("{}/chat/completions", base_url);
-    
+
     let response = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -233,20 +234,20 @@ async fn call_llm(api_key: &str, base_url: &str, model: &str, prompt: &str) -> R
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await?;
         anyhow::bail!("LLM API error ({}): {}", status, text);
     }
-    
+
     let json: serde_json::Value = response.json().await?;
-    
+
     // Extract response
     let content = json["choices"][0]["message"]["content"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Failed to parse LLM response"))?;
-    
+
     Ok(content.to_string())
 }
 
@@ -265,7 +266,7 @@ async fn extract_config_diff(cfg: &Config) -> Result<String> {
     if snapshots.is_empty() {
         return Ok("No backups available for comparison".to_string());
     }
-    
+
     // For now, just return a placeholder
     // Full implementation would extract tar.gz, compare JSONs
     Ok("Config comparison not yet implemented".to_string())
@@ -277,7 +278,7 @@ fn check_recent_workspace_changes(cfg: &Config) -> Result<String> {
     if !memory_dir.exists() {
         return Ok("Memory directory not found".to_string());
     }
-    
+
     // Find most recently modified files
     let mut recent_files = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&memory_dir) {
@@ -296,7 +297,7 @@ fn check_recent_workspace_changes(cfg: &Config) -> Result<String> {
             }
         }
     }
-    
+
     if recent_files.is_empty() {
         Ok("No recent file changes detected".to_string())
     } else {

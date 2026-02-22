@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Main configuration — rescueclaw's own settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,21 +87,25 @@ impl Config {
         let oc_config_path = self.openclaw.config_path.join("openclaw.json");
         // Also try legacy path
         let legacy_path = self.openclaw.config_path.join("clawdbot.json");
-        
+
         let config_file = if oc_config_path.exists() {
             oc_config_path
         } else if legacy_path.exists() {
             legacy_path
         } else {
-            anyhow::bail!("OpenClaw config not found at {} or {}", 
-                oc_config_path.display(), legacy_path.display());
+            anyhow::bail!(
+                "OpenClaw config not found at {} or {}",
+                oc_config_path.display(),
+                legacy_path.display()
+            );
         };
 
         let content = std::fs::read_to_string(&config_file)?;
         let raw: serde_json::Value = serde_json::from_str(&content)?;
 
         Ok(OpenClawProviderConfig {
-            default_model: raw.get("defaultModel")
+            default_model: raw
+                .get("defaultModel")
                 .and_then(|v| v.as_str())
                 .map(String::from),
             providers: raw.get("providers").cloned(),
@@ -130,9 +134,7 @@ impl Default for Config {
             },
             openclaw: OpenClawConfig {
                 workspace: PathBuf::from(""),
-                config_path: dirs::home_dir()
-                    .unwrap_or_default()
-                    .join(".openclaw"),
+                config_path: dirs::home_dir().unwrap_or_default().join(".openclaw"),
             },
         }
     }
@@ -141,18 +143,18 @@ impl Default for Config {
 /// Interactive setup wizard
 pub async fn setup_wizard() -> Result<()> {
     use std::io::{self, Write};
-    
+
     println!("🛟 RescueClaw Setup");
     println!("━━━━━━━━━━━━━━━━━━\n");
-    
+
     // Step 1: Detect OpenClaw
     println!("Step 1/6: Detect OpenClaw");
     let workspace = detect_openclaw_workspace()?;
     println!("  ✓ Workspace: {}", workspace.display());
-    
+
     let config_path = detect_openclaw_config()?;
     println!("  ✓ Config:    {}", config_path.display());
-    
+
     // Check if gateway is running
     let gateway_running = check_gateway_running().await;
     if gateway_running {
@@ -160,7 +162,7 @@ pub async fn setup_wizard() -> Result<()> {
     } else {
         println!("  ⚠ Gateway:   Not responding on :7744");
     }
-    
+
     // Validate OpenClaw config
     let oc_config = OpenClawConfig {
         workspace: workspace.clone(),
@@ -170,32 +172,32 @@ pub async fn setup_wizard() -> Result<()> {
         openclaw: oc_config.clone(),
         ..Default::default()
     };
-    
+
     match temp_cfg.read_openclaw_providers() {
         Ok(_) => println!("  ✓ Config:    Valid"),
         Err(e) => println!("  ⚠ Config:    {}", e),
     }
-    
+
     println!();
-    
+
     // Step 2: Telegram Bot
     println!("Step 2/6: Telegram Bot");
     println!("  1. Open @BotFather on Telegram");
     println!("  2. Send /newbot and name it (e.g., 'MyRescueClaw')");
     println!("  3. Copy the bot token\n");
-    
+
     let token = loop {
         let input = prompt("Bot token: ", "")?;
         if input.is_empty() {
             continue;
         }
-        
+
         // Validate format (digits:alphanumeric)
         if !input.contains(':') || input.len() < 20 {
             println!("  ❌ Invalid format. Expected format: 123456:ABC-DEF...");
             continue;
         }
-        
+
         // Test token
         print!("  Testing token...");
         io::stdout().flush()?;
@@ -210,10 +212,10 @@ pub async fn setup_wizard() -> Result<()> {
             }
         }
     };
-    
+
     println!("\n  Now send /start to your bot in Telegram.");
     println!("  Then get your user ID from @userinfobot (send any message to it).\n");
-    
+
     let user_id: i64 = loop {
         let input = prompt("Your Telegram user ID: ", "")?;
         match input.parse() {
@@ -224,36 +226,40 @@ pub async fn setup_wizard() -> Result<()> {
             }
         }
     };
-    
+
     println!();
-    
+
     // Step 3: Backup Settings
     println!("Step 3/6: Backup Settings");
     let backup_interval = prompt("Backup interval [6h]: ", "6h")?;
-    let max_snapshots: usize = prompt("Max snapshots to keep [10]: ", "10")?.parse()
+    let max_snapshots: usize = prompt("Max snapshots to keep [10]: ", "10")?
+        .parse()
         .unwrap_or(10);
-    let backup_path = PathBuf::from(prompt("Backup path [/var/rescueclaw/backups]: ", 
-        "/var/rescueclaw/backups")?);
+    let backup_path = PathBuf::from(prompt(
+        "Backup path [/var/rescueclaw/backups]: ",
+        "/var/rescueclaw/backups",
+    )?);
     let include_sessions = prompt_yn("Include session files? [n]: ", false)?;
-    
+
     // Validate backup path
     if let Err(e) = std::fs::create_dir_all(&backup_path) {
         println!("  ⚠ Warning: Could not create backup dir: {}", e);
     } else {
         println!("  ✓ Backup directory ready");
     }
-    
+
     println!();
-    
+
     // Step 4: Health Check Settings
     println!("Step 4/6: Health Check Settings");
     let check_interval = prompt("Health check interval [5m]: ", "5m")?;
-    let unhealthy_threshold: u32 = prompt("Failures before auto-restore [3]: ", "3")?.parse()
+    let unhealthy_threshold: u32 = prompt("Failures before auto-restore [3]: ", "3")?
+        .parse()
         .unwrap_or(3);
     let auto_restore = prompt_yn("Enable auto-restore? [y]: ", true)?;
-    
+
     println!();
-    
+
     // Step 5: Write Config
     println!("Step 5/6: Write Config");
     let config = Config {
@@ -275,36 +281,36 @@ pub async fn setup_wizard() -> Result<()> {
         },
         openclaw: oc_config,
     };
-    
+
     let config_dir = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?
         .join(".config/rescueclaw");
     std::fs::create_dir_all(&config_dir)?;
-    
+
     let config_file = config_dir.join("rescueclaw.json");
     let json = serde_json::to_string_pretty(&config)?;
     std::fs::write(&config_file, json)?;
-    
+
     println!("  ✓ Config written to {}", config_file.display());
     println!();
-    
+
     // Step 6: First Backup & Service Install
     println!("Step 6/6: First Backup & Service Install");
-    
+
     print!("  Taking first backup...");
     io::stdout().flush()?;
     match crate::backup::take_snapshot(&config) {
         Ok(snap) => println!(" ✓ {}", snap.id),
         Err(e) => println!(" ❌ {}", e),
     }
-    
+
     println!();
     if prompt_yn("Install systemd service? [y]: ", true)? {
         install_systemd_service(&config)?;
     } else {
         println!("  Skipped. Run 'sudo rescueclaw install' later to install the service.");
     }
-    
+
     println!();
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("✅ Setup Complete!");
@@ -314,14 +320,17 @@ pub async fn setup_wizard() -> Result<()> {
     println!("  • Take backups every {}", config.backup.interval);
     println!("  • Check health every {}", config.health.check_interval);
     if config.health.auto_restore {
-        println!("  • Auto-restore after {} consecutive failures", config.health.unhealthy_threshold);
+        println!(
+            "  • Auto-restore after {} consecutive failures",
+            config.health.unhealthy_threshold
+        );
     }
     println!();
     println!("Start the daemon:  sudo systemctl start rescueclaw");
     println!("View status:       rescueclaw status");
     println!("List backups:      rescueclaw list");
     println!();
-    
+
     Ok(())
 }
 
@@ -330,11 +339,11 @@ fn prompt(question: &str, default: &str) -> Result<String> {
     use std::io::{self, Write};
     print!("  {}", question);
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let input = input.trim();
-    
+
     if input.is_empty() {
         Ok(default.to_string())
     } else {
@@ -352,17 +361,17 @@ fn prompt_yn(question: &str, default: bool) -> Result<bool> {
 async fn validate_telegram_token(token: &str) -> Result<String> {
     let url = format!("https://api.telegram.org/bot{}/getMe", token);
     let resp = reqwest::get(&url).await?;
-    
+
     if !resp.status().is_success() {
         anyhow::bail!("Invalid token or network error");
     }
-    
+
     let json: serde_json::Value = resp.json().await?;
     let bot_name = json["result"]["username"]
         .as_str()
         .unwrap_or("unknown")
         .to_string();
-    
+
     Ok(bot_name)
 }
 
@@ -379,51 +388,14 @@ fn detect_openclaw_config() -> Result<PathBuf> {
         dirs::home_dir().map(|h| h.join(".openclaw")),
         dirs::home_dir().map(|h| h.join(".clawdbot")),
     ];
-    
+
     for candidate in candidates.into_iter().flatten() {
         if candidate.join("openclaw.json").exists() || candidate.join("clawdbot.json").exists() {
             return Ok(candidate);
         }
     }
-    
+
     anyhow::bail!("Could not find OpenClaw config directory (~/.openclaw or ~/.clawdbot)")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_default_config_is_valid() {
-        let cfg = Config::default();
-        assert_eq!(cfg.backup.interval, "6h");
-        assert_eq!(cfg.backup.max_snapshots, 10);
-        assert_eq!(cfg.health.check_interval, "5m");
-        assert_eq!(cfg.health.unhealthy_threshold, 3);
-    }
-
-    #[test]
-    fn test_config_roundtrip() {
-        let cfg = Config::default();
-        let json = serde_json::to_string(&cfg).unwrap();
-        let parsed: Config = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.backup.interval, cfg.backup.interval);
-        assert_eq!(parsed.backup.max_snapshots, cfg.backup.max_snapshots);
-    }
-
-    #[test]
-    fn test_detect_workspace_finds_soul() {
-        let temp = tempdir().unwrap();
-        let workspace = temp.path().join("workspace");
-        std::fs::create_dir_all(&workspace).unwrap();
-        std::fs::write(workspace.join("SOUL.md"), "# Test").unwrap();
-        
-        // Should find it
-        std::env::set_current_dir(&temp).unwrap();
-        // Note: detect_openclaw_workspace uses fixed paths, so can't easily test
-        // without mocking dirs::home_dir()
-    }
 }
 
 /// Try to find the OpenClaw workspace
@@ -450,8 +422,9 @@ fn generate_service_file(cfg: &Config) -> String {
         .ok()
         .and_then(|p| p.to_str().map(String::from))
         .unwrap_or_else(|| "/usr/local/bin/rescueclaw".to_string());
-    
-    format!(r#"[Unit]
+
+    format!(
+        r#"[Unit]
 Description=RescueClaw - AI Agent Watchdog
 After=network-online.target
 Wants=network-online.target
@@ -483,42 +456,42 @@ WantedBy=multi-user.target
 pub fn install_systemd_service(cfg: &Config) -> Result<()> {
     use std::io::Write;
     use std::process::{Command, Stdio};
-    
+
     println!("  Installing systemd service...");
-    
+
     let service_content = generate_service_file(cfg);
-    
+
     // Write service file using sudo tee
     let mut child = Command::new("sudo")
         .args(["tee", "/etc/systemd/system/rescueclaw.service"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()?;
-    
+
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(service_content.as_bytes())?;
     }
-    
+
     let status = child.wait()?;
     if !status.success() {
         anyhow::bail!("Failed to write service file");
     }
-    
+
     // Reload systemd
     Command::new("sudo")
         .args(["systemctl", "daemon-reload"])
         .status()?;
-    
+
     // Enable service
     Command::new("sudo")
         .args(["systemctl", "enable", "rescueclaw"])
         .status()?;
-    
+
     // Start service
     let start_status = Command::new("sudo")
         .args(["systemctl", "start", "rescueclaw"])
         .status()?;
-    
+
     if start_status.success() {
         println!("  ✓ Service installed and started");
         println!("  View logs: sudo journalctl -u rescueclaw -f");
@@ -526,38 +499,61 @@ pub fn install_systemd_service(cfg: &Config) -> Result<()> {
         println!("  ⚠ Service installed but failed to start");
         println!("  Check: sudo systemctl status rescueclaw");
     }
-    
+
     Ok(())
 }
 
 /// Uninstall the watchdog service
 pub fn uninstall() -> Result<()> {
     use std::process::Command;
-    
+
     println!("🛟 Uninstalling RescueClaw...");
-    
+
     // Stop service
     let _ = Command::new("sudo")
         .args(["systemctl", "stop", "rescueclaw"])
         .status();
-    
+
     // Disable service
     let _ = Command::new("sudo")
         .args(["systemctl", "disable", "rescueclaw"])
         .status();
-    
+
     // Remove service file
     let _ = Command::new("sudo")
         .args(["rm", "/etc/systemd/system/rescueclaw.service"])
         .status();
-    
+
     // Reload systemd
     let _ = Command::new("sudo")
         .args(["systemctl", "daemon-reload"])
         .status();
-    
+
     println!("  ✓ Service uninstalled");
     println!("  Backups preserved at /var/rescueclaw/backups/");
     println!("  Config preserved at ~/.config/rescueclaw/");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_is_valid() {
+        let cfg = Config::default();
+        assert_eq!(cfg.backup.interval, "6h");
+        assert_eq!(cfg.backup.max_snapshots, 10);
+        assert_eq!(cfg.health.check_interval, "5m");
+        assert_eq!(cfg.health.unhealthy_threshold, 3);
+    }
+
+    #[test]
+    fn test_config_roundtrip() {
+        let cfg = Config::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.backup.interval, cfg.backup.interval);
+        assert_eq!(parsed.backup.max_snapshots, cfg.backup.max_snapshots);
+    }
 }
