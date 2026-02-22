@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Main configuration — rescue-bot's own settings
+/// Main configuration — rescueclaw's own settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub backup: BackupConfig,
@@ -58,11 +58,11 @@ impl Config {
     /// Standard config file locations (checked in order)
     fn config_paths() -> Vec<PathBuf> {
         let mut paths = vec![
-            PathBuf::from("rescue-bot.json"),
-            PathBuf::from("/etc/rescue-bot/rescue-bot.json"),
+            PathBuf::from("rescueclaw.json"),
+            PathBuf::from("/etc/rescueclaw/rescueclaw.json"),
         ];
         if let Some(home) = dirs::home_dir() {
-            paths.insert(1, home.join(".config/rescue-bot/rescue-bot.json"));
+            paths.insert(1, home.join(".config/rescueclaw/rescueclaw.json"));
         }
         paths
     }
@@ -115,7 +115,7 @@ impl Default for Config {
             backup: BackupConfig {
                 interval: "6h".to_string(),
                 max_snapshots: 10,
-                path: PathBuf::from("/var/rescue-bot/backups"),
+                path: PathBuf::from("/var/rescueclaw/backups"),
                 include_sessions: false,
             },
             health: HealthConfig {
@@ -140,7 +140,7 @@ impl Default for Config {
 
 /// Interactive setup wizard
 pub async fn setup_wizard() -> Result<()> {
-    println!("🛟 Rescue Bot Setup");
+    println!("🛟 RescueClaw Setup");
     println!("━━━━━━━━━━━━━━━━━━\n");
     
     // Step 1: Detect OpenClaw
@@ -157,7 +157,7 @@ pub async fn setup_wizard() -> Result<()> {
     // - Take first backup
     
     println!("\n  Setup wizard is under construction.");
-    println!("  For now, copy rescue-bot.example.json to rescue-bot.json and edit manually.\n");
+    println!("  For now, copy rescueclaw.example.json to rescueclaw.json and edit manually.\n");
     
     Ok(())
 }
@@ -182,9 +182,9 @@ fn detect_openclaw_workspace() -> Result<PathBuf> {
 
 /// Uninstall the watchdog service
 pub fn uninstall() -> Result<()> {
-    println!("🛟 Uninstalling Rescue Bot...");
+    println!("🛟 Uninstalling RescueClaw...");
     // TODO: Stop and disable systemd service, remove service file
-    println!("  Backups preserved at /var/rescue-bot/backups/");
+    println!("  Backups preserved at /var/rescueclaw/backups/");
     println!("  ✓ Uninstalled");
     Ok(())
 }

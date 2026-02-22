@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber;
 
 #[derive(Parser)]
-#[command(name = "rescue-bot")]
+#[command(name = "rescueclaw")]
 #[command(about = "Your AI agent's always-on safety net 🛟")]
 #[command(version)]
 struct Cli {
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
             config::setup_wizard().await?;
         }
         Commands::Start => {
-            println!("🛟 Rescue Bot starting...");
+            println!("🛟 RescueClaw starting...");
             let cfg = config::Config::load()?;
             run_daemon(cfg).await?;
         }

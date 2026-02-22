@@ -12,13 +12,13 @@ pub async fn restore(cfg: &Config, backup_id: Option<&str>) -> Result<()> {
     let snapshots = crate::backup::list_snapshots(cfg)?;
     
     if snapshots.is_empty() {
-        anyhow::bail!("No backups available. Run `rescue-bot backup` first.");
+        anyhow::bail!("No backups available. Run `rescueclaw backup` first.");
     }
 
     let snapshot = if let Some(id) = backup_id {
         snapshots.iter()
             .find(|s| s.id == id)
-            .ok_or_else(|| anyhow::anyhow!("Backup '{}' not found. Use `rescue-bot list` to see available backups.", id))?
+            .ok_or_else(|| anyhow::anyhow!("Backup '{}' not found. Use `rescueclaw list` to see available backups.", id))?
     } else {
         &snapshots[0] // latest
     };

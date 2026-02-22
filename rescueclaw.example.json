@@ -2,7 +2,7 @@
   "backup": {
     "interval": "6h",
     "maxSnapshots": 10,
-    "path": "/var/rescue-bot/backups",
+    "path": "/var/rescueclaw/backups",
     "includeSessions": false
   },
   "health": {

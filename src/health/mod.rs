@@ -28,7 +28,7 @@ pub struct IncidentLog {
 
 impl fmt::Display for HealthStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "🛟 Rescue Bot Status\n")?;
+        writeln!(f, "🛟 RescueClaw Status\n")?;
         writeln!(f, "Agent:       {} {}",
             if self.agent_online { "✅" } else { "❌" },
             if self.agent_online { 
@@ -54,9 +54,9 @@ pub async fn check_status(cfg: &Config) -> Result<HealthStatus> {
         .first()
         .map(|s| s.timestamp.clone());
 
-    // Check if rescue-bot skill is installed in OpenClaw
+    // Check if rescueclaw skill is installed in OpenClaw
     let skill_installed = cfg.openclaw.workspace
-        .join("skills/rescue-bot-skill")
+        .join("skills/rescueclaw-skill")
         .exists()
         || check_skill_via_clawhub(cfg);
 
@@ -85,7 +85,7 @@ async fn check_agent_alive(cfg: &Config) -> bool {
     result.is_ok()
 }
 
-/// Check if rescue-bot skill is installed via clawhub
+/// Check if rescueclaw skill is installed via clawhub
 fn check_skill_via_clawhub(_cfg: &Config) -> bool {
     // TODO: check clawhub installed skills list
     false

@@ -3,7 +3,7 @@
 /dist/
 
 # Config with secrets
-rescue-bot.json
+rescueclaw.json
 
 # Backups (don't commit actual backups)
 /backups/

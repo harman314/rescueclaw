@@ -1,4 +1,4 @@
-# 🛟 Rescue Bot
+# 🛟 RescueClaw
 
 **Your AI agent's always-on safety net.**
 
@@ -18,14 +18,14 @@ AI agents break themselves. A bad config change, a corrupted memory file, a skil
 
 ## The Solution
 
-Rescue Bot is a **separate, ultra-lightweight watchdog** that runs alongside your OpenClaw agent. Built on [ZeroClaw](https://github.com/openagen/zeroclaw) (~5MB RAM), it's so minimal it basically can't break.
+RescueClaw is a **separate, ultra-lightweight watchdog** that runs alongside your OpenClaw agent. Built on [ZeroClaw](https://github.com/openagen/zeroclaw) (~5MB RAM), it's so minimal it basically can't break.
 
 It watches your agent. It takes backups. And when things go wrong, it brings your agent back — with a single command from your phone.
 
 ## How It Works
 
 ```
-You (Telegram)          Rescue Bot (ZeroClaw)         OpenClaw Agent
+You (Telegram)          RescueClaw (ZeroClaw)         OpenClaw Agent
       │                       │                            │
       │  /rescue              │                            │ ✗ (dead)
       │──────────────────────►│                            │
@@ -43,19 +43,19 @@ You (Telegram)          Rescue Bot (ZeroClaw)         OpenClaw Agent
 ### Option A: One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/openagen/rescue-bot/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/openagen/rescueclaw/main/install.sh | bash
 ```
 
-This downloads the rescue-bot binary for your platform, runs the setup wizard, and gets you protected in under 2 minutes.
+This downloads the rescueclaw binary for your platform, runs the setup wizard, and gets you protected in under 2 minutes.
 
 ### Option B: Via ClawHub (from inside your OpenClaw agent)
 
 Tell your agent:
-> "Install rescue-bot from ClawHub"
+> "Install rescueclaw from ClawHub"
 
 Or manually:
 ```bash
-clawhub install rescue-bot
+clawhub install rescueclaw
 ```
 
 The ClawHub install sets up both the OpenClaw skill (checkpoint API) and the ZeroClaw watchdog daemon.
@@ -65,14 +65,14 @@ The ClawHub install sets up both the OpenClaw skill (checkpoint API) and the Zer
 ```bash
 # 1. Download the binary
 # Linux amd64
-curl -L https://github.com/openagen/rescue-bot/releases/latest/download/rescue-bot-linux-amd64 -o /usr/local/bin/rescue-bot
+curl -L https://github.com/openagen/rescueclaw/releases/latest/download/rescueclaw-linux-amd64 -o /usr/local/bin/rescueclaw
 # Linux arm64 (Raspberry Pi, Oracle Cloud ARM, etc.)
-curl -L https://github.com/openagen/rescue-bot/releases/latest/download/rescue-bot-linux-arm64 -o /usr/local/bin/rescue-bot
+curl -L https://github.com/openagen/rescueclaw/releases/latest/download/rescueclaw-linux-arm64 -o /usr/local/bin/rescueclaw
 
-chmod +x /usr/local/bin/rescue-bot
+chmod +x /usr/local/bin/rescueclaw
 
 # 2. Run setup wizard
-rescue-bot setup
+rescueclaw setup
 ```
 
 ### Setup Wizard
@@ -80,9 +80,9 @@ rescue-bot setup
 The interactive setup takes about 60 seconds:
 
 ```
-$ rescue-bot setup
+$ rescueclaw setup
 
-🛟 Rescue Bot Setup
+🛟 RescueClaw Setup
 ━━━━━━━━━━━━━━━━━━
 
 Step 1/5: Detect OpenClaw
@@ -95,24 +95,24 @@ Step 2/5: Telegram Bot
   
   1. Open Telegram and message @BotFather
   2. Send /newbot
-  3. Name it something like "My Rescue Bot"
+  3. Name it something like "My RescueClaw"
   4. Paste the token here
   
   Token: 7481923xxx:AAH_xxxxxxxxxxxxxxxxxxxx
-  ✓ Bot connected: @my_rescue_bot
+  ✓ Bot connected: @my_rescueclaw
   
-  Now send any message to @my_rescue_bot in Telegram...
+  Now send any message to @my_rescueclaw in Telegram...
   ✓ Your Telegram user ID: 1618546873
 
 Step 3/5: Backup Settings
-  Backup location [/var/rescue-bot/backups]: 
+  Backup location [/var/rescueclaw/backups]: 
   Backup interval [6h]: 
   Max snapshots to keep [10]: 
   Include chat sessions? (large) [n]: 
   ✓ Config saved
 
 Step 4/5: Install Watchdog Service
-  ✓ Created systemd service: rescue-bot.service
+  ✓ Created systemd service: rescueclaw.service
   ✓ Service started and enabled on boot
 
 Step 5/5: First Backup
@@ -120,17 +120,17 @@ Step 5/5: First Backup
   ✓ Verified: all 47 files intact
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎉 Rescue Bot is live!
+🎉 RescueClaw is live!
 
   Watchdog:     running (PID 9182, 4.8MB RAM)
-  First backup: /var/rescue-bot/backups/backup-2026-02-22-1530-abc123.tar.gz
+  First backup: /var/rescueclaw/backups/backup-2026-02-22-1530-abc123.tar.gz
   Next backup:  in 6 hours
   Health check: every 5 minutes
   
-  Open Telegram → message @my_rescue_bot → try /status
+  Open Telegram → message @my_rescueclaw → try /status
 
   Tip: Install the OpenClaw skill for pre-action checkpoints:
-    clawhub install rescue-bot-skill
+    clawhub install rescueclaw-skill
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -139,11 +139,11 @@ Step 5/5: First Backup
 The watchdog works standalone, but adding the skill enables **pre-action checkpoints** — your agent automatically saves a snapshot before risky operations.
 
 ```bash
-clawhub install rescue-bot-skill
+clawhub install rescueclaw-skill
 ```
 
 Or tell your agent:
-> "Install rescue-bot-skill from ClawHub and enable it"
+> "Install rescueclaw-skill from ClawHub and enable it"
 
 Once installed, your agent will auto-checkpoint before:
 - Config changes (`gateway config.apply`)
@@ -155,14 +155,14 @@ Once installed, your agent will auto-checkpoint before:
 
 ```bash
 # Check watchdog status
-rescue-bot status
+rescueclaw status
 
 # Or from Telegram
 /status
 ```
 
 ```
-🛟 Rescue Bot Status
+🛟 RescueClaw Status
 
 Agent:       ✅ OpenClaw online (uptime: 3d 14h)
 Watchdog:    ✅ Running (4.8MB RAM)  
@@ -175,15 +175,15 @@ Skill:       ✅ Installed (checkpoint API active)
 ### Uninstall
 
 ```bash
-rescue-bot uninstall          # removes watchdog service
-clawhub uninstall rescue-bot-skill  # removes OpenClaw skill
+rescueclaw uninstall          # removes watchdog service
+clawhub uninstall rescueclaw-skill  # removes OpenClaw skill
 ```
 
-Backups are preserved at `/var/rescue-bot/backups/` — delete manually if you want them gone.
+Backups are preserved at `/var/rescueclaw/backups/` — delete manually if you want them gone.
 
 ## Commands
 
-From your Telegram chat with the Rescue Bot:
+From your Telegram chat with the RescueClaw:
 
 | Command | What it does |
 |---------|-------------|
@@ -213,7 +213,7 @@ Backups are compressed tarballs (~5-20MB each). Default: keep last 10 snapshots.
 
 ## Architecture
 
-Rescue Bot has two components:
+RescueClaw has two components:
 
 ### 1. The Watchdog (ZeroClaw daemon)
 - Runs as a systemd service, completely independent of OpenClaw
@@ -237,7 +237,7 @@ Rescue Bot has two components:
 │  │  (~200MB RAM)       │     │
 │  │                     │     │
 │  │  ┌──────────────┐  │     │
-│  │  │ rescue-bot   │  │     │
+│  │  │ rescueclaw   │  │     │
 │  │  │ skill        │──┼──┐  │
 │  │  └──────────────┘  │  │  │
 │  └────────────────────┘  │  │
@@ -248,7 +248,7 @@ Rescue Bot has two components:
 │  │  Own Telegram bot   │     │
 │  └────────────────────┘     │
 │                              │
-│  📦 /var/rescue-bot/backups  │
+│  📦 /var/rescueclaw/backups  │
 └──────────────────────────────┘
 ```
 
@@ -263,7 +263,7 @@ The real power is **prevention**. With the OpenClaw skill installed, your agent 
 
 ```
 Agent: "I'm about to install a new skill..."
-  └──► rescue-bot skill: checkpoint()
+  └──► rescueclaw skill: checkpoint()
         └──► Watchdog: snapshot saved ✓
 Agent: *installs skill*
 Agent: *breaks*
@@ -280,7 +280,7 @@ Every failure is logged with context:
 - Error logs from OpenClaw
 - Time to recovery
 
-Over time, Rescue Bot builds a **failure knowledge base**:
+Over time, RescueClaw builds a **failure knowledge base**:
 
 ```
 $ /logs
@@ -300,13 +300,13 @@ $ /logs
 
 ## Configuration
 
-`rescue-bot.json`:
+`rescueclaw.json`:
 ```json
 {
   "backup": {
     "interval": "6h",
     "maxSnapshots": 10,
-    "path": "/var/rescue-bot/backups",
+    "path": "/var/rescueclaw/backups",
     "includeSessions": false
   },
   "health": {
@@ -327,10 +327,10 @@ $ /logs
 
 ### Zero Config for AI Features
 
-Rescue Bot **reads your OpenClaw config** for all AI-related settings — model provider, API keys, default model. No duplication, no drift.
+RescueClaw **reads your OpenClaw config** for all AI-related settings — model provider, API keys, default model. No duplication, no drift.
 
 ```
-rescue-bot                     OpenClaw config (~/.openclaw/)
+rescueclaw                     OpenClaw config (~/.openclaw/)
     │                                │
     ├── reads provider config ◄──────┤  providers, API keys
     ├── reads model settings  ◄──────┤  default model
@@ -342,12 +342,12 @@ rescue-bot                     OpenClaw config (~/.openclaw/)
 ```
 
 This means:
-- **Swap your model in OpenClaw** → Rescue Bot picks it up automatically
+- **Swap your model in OpenClaw** → RescueClaw picks it up automatically
 - **Rotate API keys** → no second place to update
 - **Incident analysis** uses whatever model you already pay for
 - **Setup wizard only asks** for backup prefs + its own Telegram bot token
 
-The only thing Rescue Bot owns is its own Telegram bot token (separate from your agent's) and operational settings like backup interval. Everything AI flows from your existing OpenClaw config.
+The only thing RescueClaw owns is its own Telegram bot token (separate from your agent's) and operational settings like backup interval. Everything AI flows from your existing OpenClaw config.
 ```
 
 ## Auto-Heal Mode (Experimental)
@@ -371,7 +371,7 @@ Monitor and protect hundreds of OpenClaw agents from a single dashboard.
 
 ```
 ┌─────────────────────────────────────────┐
-│          Rescue Bot Fleet               │
+│          RescueClaw Fleet               │
 │                                         │
 │  Agent 1: ✅ Healthy    Last backup: 2h │
 │  Agent 2: ⚠️ Degraded  RAM: 95%        │
@@ -412,7 +412,7 @@ Monitor and protect hundreds of OpenClaw agents from a single dashboard.
 A: It's a 5MB Rust binary managed by systemd. If it dies, systemd restarts it in under a second. It has no state to corrupt — config is a single JSON file, backups are plain tarballs.
 
 **Q: Can I use it without Telegram?**
-A: v1 is Telegram-first. CLI commands work locally too (`rescue-bot status`, `rescue-bot restore`). Discord and other channels are planned for v2.
+A: v1 is Telegram-first. CLI commands work locally too (`rescueclaw status`, `rescueclaw restore`). Discord and other channels are planned for v2.
 
 **Q: Does it work with multiple OpenClaw instances?**
 A: One watchdog per agent in v1. Fleet mode (v2) will support many-to-one monitoring.

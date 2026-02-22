@@ -1,10 +1,10 @@
 [package]
-name = "rescue-bot"
+name = "rescueclaw"
 version = "0.1.0"
 edition = "2021"
 description = "Your AI agent's always-on safety net"
 license = "MIT"
-repository = "https://github.com/harman314/rescue-bot"
+repository = "https://github.com/harman314/rescueclaw"
 readme = "README.md"
 keywords = ["openclaw", "zeroclaw", "backup", "watchdog", "ai-agent"]
 

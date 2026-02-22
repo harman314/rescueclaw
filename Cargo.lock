@@ -1479,7 +1479,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rescue-bot"
+name = "rescueclaw"
 version = "0.1.0"
 dependencies = [
  "anyhow",

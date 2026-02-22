@@ -60,7 +60,7 @@ async fn handle_command(text: &str, cfg: &Config) -> String {
 }
 
 fn help_text() -> String {
-    "🛟 *Rescue Bot*\n\n\
+    "🛟 *RescueClaw*\n\n\
      /status — Agent health & backup status\n\
      /rescue — Restore agent from latest backup\n\
      /rescue list — Show available backups\n\
