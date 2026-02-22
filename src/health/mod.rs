@@ -260,7 +260,72 @@ fn parse_health_interval(s: &str) -> Result<tokio::time::Duration> {
         Ok(tokio::time::Duration::from_secs(m.parse::<u64>()? * 60))
     } else if let Some(s_val) = s.strip_suffix('s') {
         Ok(tokio::time::Duration::from_secs(s_val.parse::<u64>()?))
+    } else if let Some(h) = s.strip_suffix('h') {
+        Ok(tokio::time::Duration::from_secs(h.parse::<u64>()? * 3600))
     } else {
         anyhow::bail!("Invalid interval: {}", s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_health_interval_valid() {
+        assert_eq!(
+            parse_health_interval("5m").unwrap().as_secs(),
+            300
+        );
+        assert_eq!(
+            parse_health_interval("30s").unwrap().as_secs(),
+            30
+        );
+        assert_eq!(
+            parse_health_interval("2h").unwrap().as_secs(),
+            7200
+        );
+    }
+
+    #[test]
+    fn test_parse_health_interval_invalid() {
+        assert!(parse_health_interval("bad").is_err());
+        assert!(parse_health_interval("").is_err());
+        assert!(parse_health_interval("5x").is_err());
+    }
+
+    #[test]
+    fn test_incident_log_roundtrip() {
+        let incident = IncidentLog {
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            cause: "Test failure".to_string(),
+            recovery: "pending".to_string(),
+        };
+        
+        let json = serde_json::to_string(&incident).unwrap();
+        let parsed: IncidentLog = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(parsed.timestamp, incident.timestamp);
+        assert_eq!(parsed.cause, incident.cause);
+        assert_eq!(parsed.recovery, incident.recovery);
+    }
+
+    #[test]
+    fn test_health_status_display() {
+        let status = HealthStatus {
+            agent_online: true,
+            agent_uptime: Some("2h".to_string()),
+            watchdog_pid: 12345,
+            watchdog_memory_mb: 25.6,
+            last_backup: Some("2024-01-01T00:00:00Z".to_string()),
+            backup_count: 5,
+            consecutive_failures: 0,
+            skill_installed: true,
+        };
+        
+        let display = format!("{}", status);
+        assert!(display.contains("Online"));
+        assert!(display.contains("12345"));
+        assert!(display.contains("5 snapshots"));
     }
 }

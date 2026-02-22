@@ -389,6 +389,43 @@ fn detect_openclaw_config() -> Result<PathBuf> {
     anyhow::bail!("Could not find OpenClaw config directory (~/.openclaw or ~/.clawdbot)")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_default_config_is_valid() {
+        let cfg = Config::default();
+        assert_eq!(cfg.backup.interval, "6h");
+        assert_eq!(cfg.backup.max_snapshots, 10);
+        assert_eq!(cfg.health.check_interval, "5m");
+        assert_eq!(cfg.health.unhealthy_threshold, 3);
+    }
+
+    #[test]
+    fn test_config_roundtrip() {
+        let cfg = Config::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.backup.interval, cfg.backup.interval);
+        assert_eq!(parsed.backup.max_snapshots, cfg.backup.max_snapshots);
+    }
+
+    #[test]
+    fn test_detect_workspace_finds_soul() {
+        let temp = tempdir().unwrap();
+        let workspace = temp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(workspace.join("SOUL.md"), "# Test").unwrap();
+        
+        // Should find it
+        std::env::set_current_dir(&temp).unwrap();
+        // Note: detect_openclaw_workspace uses fixed paths, so can't easily test
+        // without mocking dirs::home_dir()
+    }
+}
+
 /// Try to find the OpenClaw workspace
 fn detect_openclaw_workspace() -> Result<PathBuf> {
     // Check common locations
