@@ -3,8 +3,52 @@ use teloxide::prelude::*;
 
 use crate::config::Config;
 
-/// Start the Telegram bot listener
+/// Validate the Telegram bot token before starting the listener
+pub async fn validate_token(token: &str) -> Result<String> {
+    let url = format!("https://api.telegram.org/bot{}/getMe", token);
+    let resp = reqwest::get(&url).await?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("Invalid Telegram bot token");
+    }
+
+    let json: serde_json::Value = resp.json().await?;
+    let bot_name = json["result"]["username"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
+
+    Ok(bot_name)
+}
+
+/// Start the Telegram bot listener — validates token first, returns error instead of panicking
 pub async fn listen(cfg: &Config) -> Result<()> {
+    if cfg.telegram.token.is_empty() {
+        tracing::warn!("No Telegram token configured — running without Telegram control");
+        // Sleep forever so tokio::select doesn't exit
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        }
+    }
+
+    // Validate token before entering teloxide (which panics on invalid tokens)
+    match validate_token(&cfg.telegram.token).await {
+        Ok(bot_name) => {
+            tracing::info!("Telegram bot connected: @{}", bot_name);
+        }
+        Err(e) => {
+            tracing::error!(
+                "Telegram bot token invalid: {} — running without Telegram control",
+                e
+            );
+            tracing::error!("Fix the token in ~/.config/rescueclaw/rescueclaw.json and restart");
+            // Sleep forever — health checks and backups still run
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+            }
+        }
+    }
+
     let bot = Bot::new(&cfg.telegram.token);
     let allowed_users = cfg.telegram.allowed_users.clone();
     let cfg_clone = cfg.clone();
@@ -104,10 +148,13 @@ Restore with: /rescue <id>",
 
 fn cmd_backup(cfg: &Config) -> String {
     match crate::backup::take_snapshot(cfg) {
-        Ok(snap) => format!(
-            "✅ Backup saved!\n\nID: `{}`\nSize: {}\nFiles: {}",
-            snap.id, snap.size_human, snap.file_count
-        ),
+        Ok(snap) => {
+            tracing::info!("Manual backup via Telegram: {}", snap.id);
+            format!(
+                "✅ Backup saved!\n\nID: `{}`\nSize: {}\nFiles: {}",
+                snap.id, snap.size_human, snap.file_count
+            )
+        }
         Err(e) => format!("❌ Backup failed: {}", e),
     }
 }

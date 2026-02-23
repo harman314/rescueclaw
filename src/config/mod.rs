@@ -231,7 +231,13 @@ pub async fn setup_wizard() -> Result<()> {
 
     // Step 3: Backup Settings
     println!("Step 3/6: Backup Settings");
-    let backup_interval = prompt("Backup interval [6h]: ", "6h")?;
+    let backup_interval = loop {
+        let input = prompt("Backup interval [6h]: ", "6h")?;
+        if validate_interval(&input) {
+            break input;
+        }
+        println!("  ❌ Invalid interval format. Use a number with suffix: 30s, 5m, 6h");
+    };
     let max_snapshots: usize = prompt("Max snapshots to keep [10]: ", "10")?
         .parse()
         .unwrap_or(10);
@@ -241,9 +247,25 @@ pub async fn setup_wizard() -> Result<()> {
     )?);
     let include_sessions = prompt_yn("Include session files? [n]: ", false)?;
 
-    // Validate backup path
-    if let Err(e) = std::fs::create_dir_all(&backup_path) {
-        println!("  ⚠ Warning: Could not create backup dir: {}", e);
+    // Validate backup path — try direct first, then sudo
+    if std::fs::create_dir_all(&backup_path).is_err() {
+        // Try with sudo for paths like /var/rescueclaw
+        let status = std::process::Command::new("sudo")
+            .args(["mkdir", "-p"])
+            .arg(backup_path.to_str().unwrap_or(""))
+            .status();
+        if status.map(|s| s.success()).unwrap_or(false) {
+            // Also chown to current user so we can write without sudo
+            if let Ok(user) = std::env::var("USER") {
+                let _ = std::process::Command::new("sudo")
+                    .args(["chown", "-R", &format!("{}:{}", user, user)])
+                    .arg(backup_path.to_str().unwrap_or(""))
+                    .status();
+            }
+            println!("  ✓ Backup directory created (with sudo)");
+        } else {
+            println!("  ⚠ Warning: Could not create backup dir (try a path you own, e.g. ~/.rescueclaw/backups)");
+        }
     } else {
         println!("  ✓ Backup directory ready");
     }
@@ -252,7 +274,13 @@ pub async fn setup_wizard() -> Result<()> {
 
     // Step 4: Health Check Settings
     println!("Step 4/6: Health Check Settings");
-    let check_interval = prompt("Health check interval [5m]: ", "5m")?;
+    let check_interval = loop {
+        let input = prompt("Health check interval [5m]: ", "5m")?;
+        if validate_interval(&input) {
+            break input;
+        }
+        println!("  ❌ Invalid interval format. Use a number with suffix: 30s, 5m, 6h");
+    };
     let unhealthy_threshold: u32 = prompt("Failures before auto-restore [3]: ", "3")?
         .parse()
         .unwrap_or(3);
@@ -332,6 +360,20 @@ pub async fn setup_wizard() -> Result<()> {
     println!();
 
     Ok(())
+}
+
+/// Validate interval format (e.g., "30s", "5m", "6h")
+fn validate_interval(s: &str) -> bool {
+    let s = s.trim();
+    if let Some(n) = s
+        .strip_suffix('s')
+        .or_else(|| s.strip_suffix('m'))
+        .or_else(|| s.strip_suffix('h'))
+    {
+        n.parse::<u64>().is_ok()
+    } else {
+        false
+    }
 }
 
 /// Helper: prompt for input with default
@@ -417,11 +459,14 @@ fn detect_openclaw_workspace() -> Result<PathBuf> {
 }
 
 /// Generate systemd service file content
-fn generate_service_file(cfg: &Config) -> String {
+fn generate_service_file(_cfg: &Config) -> String {
     let binary_path = std::env::current_exe()
         .ok()
         .and_then(|p| p.to_str().map(String::from))
         .unwrap_or_else(|| "/usr/local/bin/rescueclaw".to_string());
+
+    // Detect current user — run as them, not root
+    let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
 
     format!(
         r#"[Unit]
@@ -431,24 +476,21 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User={}
 ExecStart={} start
 Restart=on-failure
-RestartSec=10
+RestartSec=15
 Environment=RUST_LOG=info
+Environment=HOME=/home/{}
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths={} {} {}
-ProtectHome=read-only
+# Crash loop protection: max 5 restarts per 5 minutes
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Install]
 WantedBy=multi-user.target
 "#,
-        binary_path,
-        cfg.backup.path.display(),
-        cfg.openclaw.workspace.display(),
-        cfg.openclaw.config_path.display()
+        user, binary_path, user
     )
 }
 

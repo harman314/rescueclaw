@@ -66,50 +66,89 @@ pub fn validate_openclaw_config(config_path: &Path) -> Result<Vec<ValidationIssu
         }
     };
 
-    // Check for required fields
-    if let Some(default_model) = config.get("defaultModel") {
-        if default_model.as_str().is_none_or(|s| s.is_empty()) {
-            issues.push(ValidationIssue::error("defaultModel is empty"));
-        }
-    } else {
-        issues.push(ValidationIssue::error("Missing defaultModel field"));
+    // Check for primary model (agents.defaults.model.primary or agents.defaults.model as string)
+    let has_model = config
+        .pointer("/agents/defaults/model/primary")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+        || config
+            .pointer("/agents/defaults/model")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty());
+
+    if !has_model {
+        issues.push(ValidationIssue::warning(
+            "No primary model configured (agents.defaults.model.primary)",
+        ));
     }
 
-    // Check providers
-    if let Some(providers) = config.get("providers") {
+    // Check model providers (models.providers)
+    if let Some(providers) = config.pointer("/models/providers") {
         if let Some(providers_obj) = providers.as_object() {
             if providers_obj.is_empty() {
-                issues.push(ValidationIssue::error("No providers configured"));
+                issues.push(ValidationIssue::warning("No model providers configured"));
             } else {
-                // Validate each provider
+                // Validate each provider has a valid baseUrl
                 for (name, provider) in providers_obj {
-                    if let Some(api_key) = provider.get("apiKey") {
-                        if let Some(key_str) = api_key.as_str() {
-                            if key_str.is_empty() {
-                                issues.push(ValidationIssue::error(format!(
-                                    "Provider '{}' has empty apiKey",
-                                    name
-                                )));
-                            } else if is_placeholder_key(key_str) {
+                    if let Some(base_url) = provider.get("baseUrl").and_then(|v| v.as_str()) {
+                        if base_url.is_empty() {
+                            issues.push(ValidationIssue::error(format!(
+                                "Provider '{}' has empty baseUrl",
+                                name
+                            )));
+                        } else if !base_url.starts_with("https://")
+                            && !base_url.starts_with("http://")
+                        {
+                            issues.push(ValidationIssue::error(format!(
+                                "Provider '{}' has invalid baseUrl: {}",
+                                name, base_url
+                            )));
+                        }
+                    }
+
+                    // Check inline apiKey if present (some providers use it, others use auth profiles)
+                    if let Some(api_key) = provider.get("apiKey").and_then(|v| v.as_str()) {
+                        if api_key.is_empty() {
+                            issues.push(ValidationIssue::warning(format!(
+                                "Provider '{}' has empty apiKey",
+                                name
+                            )));
+                        } else if is_placeholder_key(api_key) {
+                            issues.push(ValidationIssue::warning(format!(
+                                "Provider '{}' appears to have placeholder apiKey",
+                                name
+                            )));
+                        }
+                    }
+                    // Note: Anthropic uses auth profiles (auth.profiles), not inline apiKey — that's fine
+
+                    // Check models array exists and is non-empty
+                    if let Some(models) = provider.get("models") {
+                        if let Some(arr) = models.as_array() {
+                            if arr.is_empty() {
                                 issues.push(ValidationIssue::warning(format!(
-                                    "Provider '{}' appears to have placeholder apiKey",
+                                    "Provider '{}' has empty models list",
                                     name
                                 )));
                             }
                         }
-                    } else {
-                        issues.push(ValidationIssue::error(format!(
-                            "Provider '{}' missing apiKey",
-                            name
-                        )));
                     }
                 }
             }
-        } else {
-            issues.push(ValidationIssue::error("providers must be an object"));
         }
     } else {
-        issues.push(ValidationIssue::error("Missing providers field"));
+        issues.push(ValidationIssue::warning(
+            "No model providers section (models.providers) — using built-in defaults",
+        ));
+    }
+
+    // Check auth profiles exist (OpenClaw uses auth.profiles for API keys)
+    if let Some(auth) = config.get("auth") {
+        if let Some(profiles) = auth.get("profiles").and_then(|v| v.as_object()) {
+            if profiles.is_empty() {
+                issues.push(ValidationIssue::warning("No auth profiles configured"));
+            }
+        }
     }
 
     // Check gateway config

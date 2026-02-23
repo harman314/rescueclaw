@@ -125,30 +125,32 @@ pub async fn restore_with_options(
     extract_backup(&snapshot.path, cfg)?;
     println!("  ✓ Files restored.");
 
-    // Step 5: Only restart if the gateway was running before we stopped it
+    // Step 5: Always try to start the gateway after restore
+    // (The whole point of rescue is to bring the agent back online)
     if was_running {
         println!("  Restarting gateway on port {}...", target_port);
-        start_openclaw_with_config(cfg)?;
+    } else {
+        println!("  Starting gateway on port {}...", target_port);
+    }
+    start_openclaw_with_config(cfg)?;
 
-        println!("  Verifying gateway is responsive...");
-        let alive = wait_for_agent(target_port, 30).await;
+    println!("  Verifying gateway is responsive...");
+    let alive = wait_for_agent(target_port, 30).await;
 
-        if alive {
-            println!("  ✓ Agent restored and online on port {}!", target_port);
-        } else {
-            println!(
-                "  ⚠ Agent started but not responding on port {}.",
-                target_port
-            );
-            println!("    Check manually: openclaw gateway status");
-        }
+    let recovery_status = if alive {
+        println!("  ✓ Agent restored and online on port {}!", target_port);
+        format!("restored from {} — agent online", snapshot.id)
     } else {
         println!(
-            "  ℹ No gateway was running on port {} — files restored only.",
+            "  ⚠ Gateway not responding on port {} after 30s.",
             target_port
         );
-        println!("    Start it manually when ready: openclaw gateway start");
-    }
+        println!("    Try manually: openclaw gateway start");
+        format!("restored from {} — gateway not responding", snapshot.id)
+    };
+
+    // Log the restore event
+    log_incident(cfg, "restore", &recovery_status);
 
     Ok(())
 }
@@ -182,6 +184,26 @@ pub async fn restore_and_analyze(
     }
 
     Ok(())
+}
+
+/// Log an incident/event to the incidents.jsonl file
+fn log_incident(cfg: &Config, cause: &str, recovery: &str) {
+    let incident = crate::health::IncidentLog {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        cause: cause.to_string(),
+        recovery: recovery.to_string(),
+    };
+    let incidents_path = cfg.backup.path.join("incidents.jsonl");
+    if let Ok(line) = serde_json::to_string(&incident) {
+        let _ = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&incidents_path)
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "{}", line)
+            });
+    }
 }
 
 // ─── Gateway targeting ─────────────────────────────────────────────
@@ -273,53 +295,36 @@ fn kill_process(pid: u32) -> Result<()> {
     Ok(())
 }
 
-/// Start OpenClaw gateway using the specific config path
-fn start_openclaw_with_config(cfg: &Config) -> Result<()> {
-    let config_path = cfg.openclaw.config_path.join("openclaw.json");
-    let legacy_path = cfg.openclaw.config_path.join("clawdbot.json");
-
-    // Try openclaw CLI with explicit config
-    let result = if config_path.exists() {
-        Command::new("openclaw")
-            .args([
-                "gateway",
-                "start",
-                "--config",
-                &config_path.to_string_lossy(),
-            ])
-            .output()
-    } else if legacy_path.exists() {
-        Command::new("clawdbot")
-            .args([
-                "gateway",
-                "start",
-                "--config",
-                &legacy_path.to_string_lossy(),
-            ])
-            .output()
+/// Start OpenClaw gateway
+fn start_openclaw_with_config(_cfg: &Config) -> Result<()> {
+    // Try openclaw CLI first, then clawdbot (legacy)
+    let cli = if Command::new("openclaw").arg("--version").output().is_ok() {
+        "openclaw"
     } else {
-        // No config file found — try bare start
-        Command::new("openclaw").args(["gateway", "start"]).output()
+        "clawdbot"
     };
+
+    let result = Command::new(cli).args(["gateway", "start"]).output();
 
     match result {
         Ok(o) if o.status.success() => Ok(()),
-        Ok(o) => {
-            let stderr = String::from_utf8_lossy(&o.stderr);
-            // Systemd-managed services may not support --config, try plain restart
-            tracing::info!(
-                "Config-targeted start failed ({}), trying plain restart",
-                stderr.trim()
-            );
+        Ok(_) => {
+            // Try systemd as fallback
+            tracing::info!("CLI start failed, trying systemd restart");
             let _ = Command::new("systemctl")
                 .args(["--user", "restart", "openclaw-gateway"])
+                .output();
+            // Also try system-level systemd
+            let _ = Command::new("sudo")
+                .args(["systemctl", "restart", "openclaw-gateway"])
                 .output();
             Ok(())
         }
         Err(e) => {
             anyhow::bail!(
-                "Could not start gateway: {}. Start manually: openclaw gateway start",
-                e
+                "Could not start gateway: {}. Start manually: {} gateway start",
+                e,
+                cli
             );
         }
     }

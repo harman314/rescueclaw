@@ -11,14 +11,22 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             artifact: rescueclaw-linux-amd64
+            os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             artifact: rescueclaw-linux-arm64
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            artifact: rescueclaw-darwin-arm64
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            artifact: rescueclaw-darwin-amd64
+            os: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +37,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        if: matrix.target == 'aarch64-unknown-linux-gnu' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
@@ -86,6 +94,8 @@ jobs:
           files: |
             artifacts/rescueclaw-linux-amd64/rescueclaw-linux-amd64
             artifacts/rescueclaw-linux-arm64/rescueclaw-linux-arm64
+            artifacts/rescueclaw-darwin-arm64/rescueclaw-darwin-arm64
+            artifacts/rescueclaw-darwin-amd64/rescueclaw-darwin-amd64
           generate_release_notes: true
           draft: false
           prerelease: false
