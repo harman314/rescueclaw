@@ -30,6 +30,12 @@ The agent can also invoke RescueClaw CLI directly:
 - `rescueclaw status` — check health
 - `rescueclaw list` — list backups
 
+## Installation
+
+The daemon binary is bundled for supported platforms (linux/arm64). On install, it copies to `~/.local/bin/rescueclaw`. For other platforms, download from [GitHub Releases](https://github.com/harman314/rescueclaw/releases).
+
+Data is stored in `~/.openclaw/rescueclaw/` (user-local, no sudo required).
+
 ## API Reference
 
 ### `createCheckpoint(reason, rollbackWindowSec = 300)`

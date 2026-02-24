@@ -9,7 +9,9 @@
 const fs = require('fs');
 const { execSync } = require('child_process');
 
-const CHECKPOINT_PATH = '/var/rescueclaw/checkpoint-request.json';
+const path = require('path');
+const os = require('os');
+const CHECKPOINT_PATH = path.join(os.homedir(), '.openclaw', 'rescueclaw', 'checkpoint-request.json');
 
 /**
  * Create a checkpoint before a risky operation
